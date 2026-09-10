@@ -59,6 +59,25 @@ app.use('/api/v1/extraction', extractionRoutes);
 app.use('/api/v1/drafts', draftRoutes);
 app.use('/api/v1/submissions', submissionRoutes);
 
+// Serve React Frontend Production Build (Unified Single Service)
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const frontendDistPath = path.resolve(__dirname, '../../frontend/dist');
+
+if (fs.existsSync(frontendDistPath)) {
+  app.use(express.static(frontendDistPath));
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api') || req.path.startsWith('/health')) {
+      return next();
+    }
+    res.sendFile(path.resolve(frontendDistPath, 'index.html'));
+  });
+}
+
 // Centralized error handler
 app.use(errorHandler);
 
