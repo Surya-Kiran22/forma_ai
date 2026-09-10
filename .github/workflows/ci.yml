@@ -1,0 +1,42 @@
+name: Forma AI CI Pipeline
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Type Check & Lint Backend
+        run: npm run type-check --workspace=backend
+
+      - name: Type Check & Lint Frontend
+        run: npm run type-check --workspace=frontend
+
+      - name: Run Backend Tests
+        run: npm run test --workspace=backend
+        env:
+          JWT_SECRET: test-jwt-secret-key-forma-ai-min-32-chars
+          JWT_REFRESH_SECRET: test-refresh-jwt-secret-key-forma-ai
+          NODE_ENV: test
+
+      - name: Run Extraction Benchmark
+        run: npm run benchmark --workspace=backend
+
+      - name: Build Project
+        run: npm run build

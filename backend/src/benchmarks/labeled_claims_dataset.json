@@ -1,0 +1,49 @@
+[
+  {
+    "id": "claim_001",
+    "formType": "auto_claim",
+    "description": "Deer collision on highway",
+    "narrativeText": "I hit a deer on I-95 yesterday in my Honda, and the windshield shattered.",
+    "groundTruth": {
+      "incident.type": "animal_collision",
+      "vehicle.make": "Honda",
+      "damage.location": "windshield",
+      "damage.severity": "severe"
+    }
+  },
+  {
+    "id": "claim_002",
+    "formType": "auto_claim",
+    "description": "Rear-end collision at traffic light",
+    "narrativeText": "A Toyota rear-ended my car today while I was stopped at the traffic red light on Main Street. The rear bumper is broken.",
+    "groundTruth": {
+      "incident.type": "rear_end",
+      "vehicle.make": "Toyota",
+      "damage.location": "bumper",
+      "incident.location": "Main Street"
+    }
+  },
+  {
+    "id": "claim_003",
+    "formType": "auto_claim",
+    "description": "Hail damage to roof and hood",
+    "narrativeText": "Severe hail storm yesterday caused multiple dents on the hood and roof of my Ford truck.",
+    "groundTruth": {
+      "incident.type": "weather_damage",
+      "vehicle.make": "Ford",
+      "damage.location": "hood",
+      "damage.severity": "severe"
+    }
+  },
+  {
+    "id": "claim_004",
+    "formType": "health_intake",
+    "description": "Acute chest pain medical intake",
+    "narrativeText": "Patient reports sudden onset chest pain starting yesterday morning with shortness of breath. No prior cardiac history.",
+    "groundTruth": {
+      "symptom.primary": "chest_pain",
+      "symptom.severity": "severe",
+      "history.cardiac": "no"
+    }
+  }
+]

@@ -1,0 +1,32 @@
+{
+  "name": "forma-ai-backend",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Forma AI Backend Service - Dynamic Form Schema Engine & LLM Extraction API",
+  "main": "src/server.js",
+  "scripts": {
+    "dev": "node --watch src/server.js",
+    "start": "node src/server.js",
+    "test": "node --experimental-vm-modules ../node_modules/jest/bin/jest.js --runInBand --detectOpenHandles",
+    "benchmark": "node src/scripts/benchmark.js",
+    "seed": "node src/scripts/seed.js"
+  },
+  "dependencies": {
+    "@langchain/core": "^0.3.80",
+    "@langchain/openai": "^0.4.0",
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "express-rate-limit": "^7.5.0",
+    "jsonwebtoken": "^9.0.2",
+    "langchain": "^0.3.15",
+    "mongodb-memory-server": "^10.1.0",
+    "mongoose": "^8.9.5",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "supertest": "^7.0.0"
+  }
+}

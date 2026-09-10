@@ -1,0 +1,57 @@
+# Render Blueprint configuration for Forma AI Monorepo
+# Documentation: https://render.com/docs/blueprint-spec
+
+services:
+  # ----------------------------------------------------
+  # Backend API Web Service
+  # ----------------------------------------------------
+  - type: web
+    name: forma-ai-backend
+    runtime: node
+    region: oregon
+    plan: free
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "5000"
+      - key: MONGODB_URI
+        sync: false
+      - key: JWT_SECRET
+        generateWithMinLength: 32
+      - key: JWT_REFRESH_SECRET
+        generateWithMinLength: 32
+      - key: CORS_ORIGIN
+        fromService:
+          type: web
+          name: forma-ai-frontend
+          property: url
+      - key: LLM_PROVIDER
+        value: mock
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-4o
+
+  # ----------------------------------------------------
+  # Frontend SPA Static Site
+  # ----------------------------------------------------
+  - type: web
+    name: forma-ai-frontend
+    runtime: static
+    region: oregon
+    plan: free
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_BASE_URL
+        sync: false
