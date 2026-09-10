@@ -12,19 +12,28 @@ import submissionRoutes from './routes/submissionRoutes.js';
 
 const app = express();
 
-// Security CORS config - locked to configured origin in production
-const allowedOrigins = env.CORS_ORIGIN.split(',').map((o) => o.trim());
+// Security CORS config - flexible origin matching with support for Render subdomains & wildcards
+const allowedOrigins = (env.CORS_ORIGIN || '*')
+  .split(',')
+  .map((o) => o.trim().replace(/\/$/, ''));
+
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow requests with no origin (mobile apps, curl, server-to-server)
-      if (!origin || allowedOrigins.includes(origin) || env.NODE_ENV === 'development') {
-        callback(null, true);
-      } else {
-        callback(new Error('CORS request blocked: Origin not allowed'));
+      // Allow non-browser requests (mobile apps, curl, postman) or dev mode or wildcard
+      if (!origin || allowedOrigins.includes('*') || env.NODE_ENV === 'development') {
+        return callback(null, true);
       }
+      const cleanOrigin = origin.replace(/\/$/, '');
+      if (allowedOrigins.includes(cleanOrigin) || cleanOrigin.endsWith('.onrender.com')) {
+        return callback(null, true);
+      }
+      console.warn(`[CORS Blocked] Origin: ${origin}, Allowed: ${JSON.stringify(allowedOrigins)}`);
+      return callback(null, false);
     },
     credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
   })
 );
 
