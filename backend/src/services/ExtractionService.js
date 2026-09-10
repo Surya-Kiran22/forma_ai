@@ -9,12 +9,13 @@ import { LLMServiceError } from '../utils/errors.js';
 export class ExtractionService {
   constructor() {
     this.model = null;
-    if (env.LLM_PROVIDER === 'openai' && env.OPENAI_API_KEY) {
+    const isPlaceholderKey = !env.OPENAI_API_KEY || env.OPENAI_API_KEY.includes('your_openai') || env.OPENAI_API_KEY.startsWith('sk-placeholder');
+    if (env.LLM_PROVIDER === 'openai' && !isPlaceholderKey) {
       this.model = new ChatOpenAI({
         openAIApiKey: env.OPENAI_API_KEY,
         modelName: env.OPENAI_MODEL,
         temperature: 0, // Deterministic extraction
-        maxRetries: 2,
+        maxRetries: 1,
       });
     }
   }
@@ -85,12 +86,16 @@ export class ExtractionService {
   /**
    * Exponential backoff retry wrapper for LLM call
    */
-  async extractWithLLMWithRetry(narrativeText, targets, maxRetries = 2) {
+  async extractWithLLMWithRetry(narrativeText, targets, maxRetries = 1) {
     let delay = 1000;
     for (let attempt = 1; attempt <= maxRetries + 1; attempt++) {
       try {
         return await this.executeLLMPrompt(narrativeText, targets);
       } catch (err) {
+        // Immediate fallback on 401 authentication error
+        if (err.status === 401 || err.message?.includes('401') || err.message?.includes('Incorrect API key')) {
+          throw err;
+        }
         if (attempt > maxRetries) throw err;
         console.warn(`[LLM Retry] Attempt ${attempt} failed. Retrying in ${delay}ms...`);
         await new Promise((res) => setTimeout(res, delay));
