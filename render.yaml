@@ -40,7 +40,6 @@ services:
   - type: web
     name: forma-ai-frontend
     runtime: static
-    plan: free
     rootDir: frontend
     buildCommand: npm install && npm run build
     staticPublishPath: dist
