@@ -1,99 +1,96 @@
 import React from 'react';
 import { useFormStore } from '../../store/useFormStore';
-import { Sparkles, FileText, UserCheck, LogIn, BarChart2, ShieldCheck } from 'lucide-react';
 
 export function Header({ onOpenAuth, onOpenSubmissions, onOpenBenchmark }) {
   const { activeFormType, setFormType, activeSchema, user, isAuthenticated, logout } = useFormStore();
 
   return (
-    <header className="bg-slate-900 border-b border-slate-800 sticky top-0 z-40">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-        {/* Logo & Title */}
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-sky-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-sky-500/20">
-            <Sparkles className="w-5 h-5 text-white animate-pulse" />
-          </div>
+    <header className="bg-white border-b border-slate-300 pt-6 pb-4 px-6">
+      <div className="max-w-7xl mx-auto">
+        {/* Top Header Row */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
           <div>
-            <div className="flex items-center gap-2">
-              <h1 className="font-bold text-lg text-slate-100 tracking-tight">Forma AI</h1>
-              <span className="text-[10px] uppercase tracking-wider font-semibold bg-sky-500/10 text-sky-400 border border-sky-500/20 px-2 py-0.5 rounded-full">
-                Production Engine
-              </span>
-            </div>
-            <p className="text-xs text-slate-400">AI-Augmented Dynamic Form Architecture</p>
+            <h1 className="text-2xl font-bold text-slate-800 tracking-tight">
+              Forma AI — Dynamic Form & AI Extraction Engine
+            </h1>
+            <p className="text-sm text-slate-600 mt-1 font-medium">
+              LangChain Structured Extraction • MongoDB Schema Store • 3-Level Deep Dynamic Branching
+            </p>
           </div>
-        </div>
 
-        {/* Form Schema Switcher */}
-        <div className="flex items-center gap-2 bg-slate-950 p-1 rounded-xl border border-slate-800">
-          <button
-            onClick={() => setFormType('auto_claim')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-              activeFormType === 'auto_claim'
-                ? 'bg-sky-600 text-white shadow-md'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            Auto Insurance Claim
-          </button>
-          <button
-            onClick={() => setFormType('health_intake')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-              activeFormType === 'health_intake'
-                ? 'bg-sky-600 text-white shadow-md'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            Healthcare Intake
-          </button>
-        </div>
+          {/* User Auth & Benchmark Controls */}
+          <div className="flex items-center gap-3">
+            <button
+              onClick={onOpenBenchmark}
+              className="bg-emerald-800 hover:bg-emerald-900 text-white font-semibold text-xs px-4 py-2 rounded transition-colors shadow-sm"
+            >
+              LLM Accuracy Benchmark Suite
+            </button>
 
-        {/* Action Controls */}
-        <div className="flex items-center gap-3">
-          {activeSchema && (
-            <div className="hidden md:flex items-center gap-1.5 text-xs text-slate-400 bg-slate-800/60 px-2.5 py-1 rounded-md border border-slate-700/50">
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Schema v{activeSchema.version}</span>
-            </div>
-          )}
-
-          <button
-            onClick={onOpenBenchmark}
-            className="flex items-center gap-1.5 text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg border border-slate-700 transition-colors"
-          >
-            <BarChart2 className="w-4 h-4 text-indigo-400" />
-            <span>Benchmark Suite</span>
-          </button>
-
-          {isAuthenticated ? (
-            <div className="flex items-center gap-2">
-              <button
-                onClick={onOpenSubmissions}
-                className="flex items-center gap-1.5 text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg border border-slate-700 transition-colors"
-              >
-                <FileText className="w-4 h-4 text-sky-400" />
-                <span>My Claims</span>
-              </button>
-
-              <div className="flex items-center gap-2 pl-2 border-l border-slate-800">
-                <span className="text-xs text-slate-300 font-medium hidden sm:inline">{user?.name}</span>
+            {isAuthenticated ? (
+              <div className="flex items-center gap-3 bg-slate-50 border border-slate-300 rounded px-3 py-1.5">
+                <button
+                  onClick={onOpenSubmissions}
+                  className="text-xs font-semibold text-emerald-800 hover:text-emerald-900 underline"
+                >
+                  My Claims History
+                </button>
+                <span className="text-xs text-slate-500">|</span>
+                <span className="text-xs font-bold text-slate-700">{user?.name}</span>
                 <button
                   onClick={logout}
-                  className="text-xs text-rose-400 hover:text-rose-300 font-medium transition-colors"
+                  className="text-xs text-red-600 hover:text-red-700 font-semibold"
                 >
                   Logout
                 </button>
               </div>
+            ) : (
+              <button
+                onClick={onOpenAuth}
+                className="bg-emerald-700 hover:bg-emerald-800 text-white font-semibold text-xs px-4 py-2 rounded transition-colors shadow-sm"
+              >
+                Sign In / Register
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Action Controls & Form Type Selection Bar (Styled like the reference search & create box) */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-3 border-t border-slate-200">
+          {/* Active Schema Switcher Box */}
+          <div className="md:col-span-2 flex flex-wrap items-center gap-3">
+            <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">Select Form Type:</span>
+            <div className="inline-flex rounded border border-slate-300 bg-white p-1">
+              <button
+                onClick={() => setFormType('auto_claim')}
+                className={`px-4 py-1.5 rounded text-xs font-semibold transition-all ${
+                  activeFormType === 'auto_claim'
+                    ? 'bg-emerald-800 text-white shadow-sm'
+                    : 'text-slate-700 hover:bg-slate-100'
+                }`}
+              >
+                Auto Insurance Claim (50+ Fields)
+              </button>
+              <button
+                onClick={() => setFormType('health_intake')}
+                className={`px-4 py-1.5 rounded text-xs font-semibold transition-all ${
+                  activeFormType === 'health_intake'
+                    ? 'bg-emerald-800 text-white shadow-sm'
+                    : 'text-slate-700 hover:bg-slate-100'
+                }`}
+              >
+                Healthcare Medical Intake
+              </button>
             </div>
-          ) : (
-            <button
-              onClick={onOpenAuth}
-              className="flex items-center gap-1.5 text-xs font-medium bg-sky-600 hover:bg-sky-500 text-white px-3.5 py-1.5 rounded-lg shadow-sm transition-all"
-            >
-              <LogIn className="w-4 h-4" />
-              <span>Sign In / Register</span>
-            </button>
-          )}
+          </div>
+
+          {/* Active Schema Version Card */}
+          <div className="bg-slate-50 border border-slate-300 rounded p-2.5 flex items-center justify-between">
+            <span className="text-xs font-bold text-slate-700">Schema Version:</span>
+            <span className="text-xs font-mono font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 px-2.5 py-0.5 rounded">
+              {activeSchema ? `v${activeSchema.version} (${activeSchema.formType})` : 'Loading...'}
+            </span>
+          </div>
         </div>
       </div>
     </header>

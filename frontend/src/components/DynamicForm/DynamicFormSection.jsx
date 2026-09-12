@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { useFormStore } from '../../store/useFormStore';
 import { evaluateRule } from '../../utils/ruleEvaluator';
 import { DynamicFormField } from './DynamicFormField';
-import { ChevronDown, ChevronUp, Layers, Sparkles } from 'lucide-react';
 
 export function DynamicFormSection({ section, register, errors }) {
   const { formData } = useFormStore();
@@ -10,58 +9,48 @@ export function DynamicFormSection({ section, register, errors }) {
 
   // Evaluate Section-level dynamic branching rule
   if (section.showIf && !evaluateRule(section.showIf, formData)) {
-    return null; // Entire section is hidden dynamically based on backend JSON schema branching rules
+    return null; // Hidden by dynamic branching rule
   }
 
   const isConditionalBranch = Boolean(section.showIf);
 
   return (
     <div
-      className={`border rounded-2xl mb-6 overflow-hidden transition-all duration-300 ${
-        isConditionalBranch
-          ? 'bg-slate-900/90 border-sky-500/30 shadow-lg shadow-sky-500/5'
-          : 'bg-slate-900/60 border-slate-800'
+      className={`border rounded mb-6 overflow-hidden bg-white shadow-sm ${
+        isConditionalBranch ? 'border-emerald-600 border-2' : 'border-slate-300'
       }`}
     >
-      {/* Section Header */}
+      {/* Section Header styled like the Command Panel header in screenshot */}
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full px-6 py-4 flex items-center justify-between bg-slate-800/40 hover:bg-slate-800/80 transition-colors text-left"
+        className={`w-full px-4 py-3 flex items-center justify-between transition-colors text-left border-b ${
+          isConditionalBranch ? 'bg-emerald-50 border-emerald-300' : 'bg-slate-50 border-slate-200'
+        }`}
       >
         <div className="flex items-center gap-3">
-          <div
-            className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-semibold ${
-              isConditionalBranch
-                ? 'bg-sky-500/20 text-sky-400 border border-sky-500/30'
-                : 'bg-slate-800 text-slate-400'
-            }`}
-          >
-            <Layers className="w-3.5 h-3.5" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h3 className="text-sm font-semibold text-slate-100">{section.title}</h3>
-              {isConditionalBranch && (
-                <span className="text-[10px] font-medium bg-sky-500/10 text-sky-300 border border-sky-500/20 px-2 py-0.5 rounded-full flex items-center gap-1">
-                  <Sparkles className="w-2.5 h-2.5 text-sky-400" /> Conditional Branch Active
-                </span>
-              )}
-            </div>
-            {section.description && (
-              <p className="text-xs text-slate-400 mt-0.5">{section.description}</p>
-            )}
-          </div>
+          <h3 className="text-sm font-bold text-slate-800 tracking-tight">{section.title}</h3>
+          {isConditionalBranch && (
+            <span className="text-[10px] font-bold uppercase bg-emerald-700 text-white px-2 py-0.5 rounded">
+              3-Level Branch Active
+            </span>
+          )}
         </div>
 
-        <div className="text-slate-400">
-          {isOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-        </div>
+        <span className="text-xs font-bold text-slate-600">
+          {isOpen ? '[ Collapse ]' : '[ Expand ]'}
+        </span>
       </button>
+
+      {section.description && (
+        <div className="px-4 py-2 bg-slate-50/50 border-b border-slate-200 text-xs text-slate-600 italic">
+          {section.description}
+        </div>
+      )}
 
       {/* Section Body */}
       {isOpen && (
-        <div className="p-6 grid grid-cols-1 sm:grid-cols-2 gap-5 border-t border-slate-800/60 animate-accordion-down">
+        <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50/30">
           {section.fields?.map((field) => (
             <DynamicFormField key={field.id} field={field} register={register} errors={errors} />
           ))}

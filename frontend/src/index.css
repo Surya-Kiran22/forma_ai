@@ -4,19 +4,19 @@
 
 @layer base {
   body {
-    @apply bg-slate-950 text-slate-100 font-sans;
+    @apply bg-slate-100 text-slate-900 font-sans antialiased min-h-screen;
   }
 }
 
-/* Smooth transition for conditional expanding sections */
+/* Smooth accordion transition */
 .animate-accordion-down {
-  animation: accordionDown 0.25s ease-out forwards;
+  animation: accordionDown 0.2s ease-out forwards;
 }
 
 @keyframes accordionDown {
   from {
     opacity: 0;
-    transform: translateY(-8px);
+    transform: translateY(-4px);
   }
   to {
     opacity: 1;

@@ -8,7 +8,7 @@ export function DynamicFormField({ field, register, errors }) {
 
   // Evaluate field-level conditional branching rule
   if (field.showIf && !evaluateRule(field.showIf, formData)) {
-    return null; // Field is hidden by dynamic schema branching rule
+    return null; // Field hidden by dynamic schema rule
   }
 
   const currentValue = getNestedValue(formData, field.id) ?? '';
@@ -26,14 +26,14 @@ export function DynamicFormField({ field, register, errors }) {
   };
 
   return (
-    <div className="space-y-1.5 animate-accordion-down">
-      <div className="flex items-center justify-between">
+    <div className="space-y-1 bg-white p-3 border border-slate-200 rounded">
+      <div className="flex items-center justify-between mb-1">
         <label
           htmlFor={`field_${field.id}`}
-          className="block text-xs font-semibold text-slate-200 tracking-wide"
+          className="block text-xs font-bold text-slate-800"
         >
           {field.label}
-          {isRequired && <span className="text-rose-400 ml-1" aria-hidden="true">*</span>}
+          {isRequired && <span className="text-red-600 ml-1">*</span>}
         </label>
 
         {/* AI Confidence Badge */}
@@ -45,7 +45,7 @@ export function DynamicFormField({ field, register, errors }) {
       </div>
 
       {field.placeholder && (
-        <p className="text-[11px] text-slate-400">{field.placeholder}</p>
+        <p className="text-[11px] text-slate-500 mb-1">{field.placeholder}</p>
       )}
 
       {/* Input Field Rendering */}
@@ -57,8 +57,7 @@ export function DynamicFormField({ field, register, errors }) {
           onChange={handleChange}
           aria-required={isRequired}
           aria-invalid={Boolean(errorMsg)}
-          aria-describedby={errorMsg ? `error_${field.id}` : undefined}
-          className="w-full bg-slate-950/70 border border-slate-700/80 rounded-xl px-3.5 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500/50 focus:border-sky-500 transition-all"
+          className="w-full bg-white border border-slate-300 rounded px-3 py-1.5 text-xs text-slate-900 focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 transition-all font-sans"
         />
       ) : field.type === 'textarea' ? (
         <textarea
@@ -68,7 +67,7 @@ export function DynamicFormField({ field, register, errors }) {
           rows={3}
           aria-required={isRequired}
           aria-invalid={Boolean(errorMsg)}
-          className="w-full bg-slate-950/70 border border-slate-700/80 rounded-xl px-3.5 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500/50 focus:border-sky-500 transition-all resize-none"
+          className="w-full bg-white border border-slate-300 rounded px-3 py-1.5 text-xs text-slate-900 focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 transition-all resize-none font-sans"
         />
       ) : field.type === 'select' ? (
         <select
@@ -77,7 +76,7 @@ export function DynamicFormField({ field, register, errors }) {
           onChange={handleChange}
           aria-required={isRequired}
           aria-invalid={Boolean(errorMsg)}
-          className="w-full bg-slate-950/70 border border-slate-700/80 rounded-xl px-3.5 py-2 text-xs text-slate-100 focus:outline-none focus:ring-2 focus:ring-sky-500/50 focus:border-sky-500 transition-all"
+          className="w-full bg-white border border-slate-300 rounded px-3 py-1.5 text-xs text-slate-900 focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 transition-all"
         >
           <option value="">-- Select an option --</option>
           {field.options?.map((opt, i) => (
@@ -93,10 +92,10 @@ export function DynamicFormField({ field, register, errors }) {
             return (
               <label
                 key={i}
-                className={`flex items-center gap-2 p-2.5 rounded-xl border text-xs cursor-pointer transition-all ${
+                className={`flex items-center gap-2 p-2 rounded border text-xs cursor-pointer font-medium transition-all ${
                   checked
-                    ? 'bg-sky-500/10 border-sky-500/50 text-sky-200'
-                    : 'bg-slate-950/50 border-slate-800 text-slate-400 hover:border-slate-700'
+                    ? 'bg-emerald-700 text-white border-emerald-800 shadow-sm'
+                    : 'bg-slate-50 text-slate-700 border-slate-300 hover:bg-slate-100'
                 }`}
               >
                 <input
@@ -105,7 +104,7 @@ export function DynamicFormField({ field, register, errors }) {
                   value={opt.value}
                   checked={checked}
                   onChange={handleChange}
-                  className="text-sky-500 focus:ring-sky-500 h-3.5 w-3.5"
+                  className="text-emerald-800 focus:ring-emerald-600 h-3.5 w-3.5"
                 />
                 <span>{opt.label}</span>
               </label>
@@ -119,14 +118,14 @@ export function DynamicFormField({ field, register, errors }) {
             type="checkbox"
             checked={Boolean(currentValue)}
             onChange={handleChange}
-            className="rounded border-slate-700 text-sky-500 focus:ring-sky-500 h-4 w-4 bg-slate-950"
+            className="rounded border-slate-300 text-emerald-800 focus:ring-emerald-600 h-4 w-4 bg-white"
           />
-          <span className="text-xs text-slate-300">{field.label}</span>
+          <span className="text-xs text-slate-800 font-medium">{field.label}</span>
         </label>
       ) : null}
 
       {errorMsg && (
-        <p id={`error_${field.id}`} className="text-[11px] text-rose-400 font-medium">
+        <p className="text-[11px] text-red-600 font-bold mt-1">
           {errorMsg}
         </p>
       )}
