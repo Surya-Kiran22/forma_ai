@@ -1,338 +1,276 @@
-/**
- * M4: LLM Extraction & Prompt Design
- * Week 1 - Day 2: Core LLM Extraction Engine & Deterministic Heuristic Fallback
- *
- * Fix: Immediately fall back on 401 (invalid key) and 429 (no credits / rate limit)
- *      without wasting retry attempts.
- */
+import { ChatOpenAI } from '@langchain/openai';
+import { PromptTemplate } from '@langchain/core/prompts';
+import { StringOutputParser } from '@langchain/core/output_parsers';
+import { env } from '../config/env.js';
+import { schemaService } from './SchemaService.js';
+import { ruleEngineService } from './RuleEngineService.js';
+import { LLMServiceError } from '../utils/errors.js';
 
-const { buildExtractionPrompt } = require('../prompts/extractionPrompt');
-const { extractTargetFields, normalizeExtractedValues, calculateConfidenceMetrics } = require('./promptBuilder');
-const { ruleEngineService } = require('./ruleEngineService');
-
-// Status codes that should NEVER be retried — fall back to heuristic instantly
-const NON_RETRYABLE_STATUSES = new Set([401, 403, 429]);
-
-class ExtractionService {
+export class ExtractionService {
   constructor() {
-    this.apiKey = process.env.OPENAI_API_KEY || process.env.GEMINI_API_KEY || null;
-    this.provider = process.env.LLM_PROVIDER || (process.env.GEMINI_API_KEY ? 'gemini' : 'openai');
+    this.model = null;
+    const isPlaceholderKey =
+      !env.OPENAI_API_KEY ||
+      env.OPENAI_API_KEY.includes('your_openai') ||
+      env.OPENAI_API_KEY.startsWith('sk-placeholder');
+    if (env.LLM_PROVIDER === 'openai' && !isPlaceholderKey) {
+      this.model = new ChatOpenAI({
+        openAIApiKey: env.OPENAI_API_KEY,
+        modelName: env.OPENAI_MODEL,
+        temperature: 0,
+        maxRetries: 0,
+      });
+    }
   }
 
-  /**
-   * Main extraction entry point
-   */
-  async extractFields(formOrTargets, narrativeText, options = {}) {
-    const targets = extractTargetFields(formOrTargets);
-    if (!targets || targets.length === 0) {
-      return {
-        extractedData: {},
-        confidenceScores: {},
-        lowConfidenceFields: [],
-        missingFields: [],
-        source: 'none',
-      };
-    }
+  async extractFields(formType, narrativeText) {
+    const schema = await schemaService.getLatestSchema(formType);
+    const schemaFields = schemaService.extractAllFields(schema);
+
+    const extractionTargets = schemaFields
+      .filter((f) => f.aiExtraction || f.id)
+      .map((f) => ({
+        id: f.id,
+        label: f.label,
+        type: f.type,
+        options: f.options ? f.options.map((o) => o.value) : undefined,
+        description: f.aiExtraction?.description || f.label,
+      }));
 
     let extractedData = {};
     let confidenceScores = {};
-    let source = 'heuristic_fallback_engine';
 
-    const hasValidApiKey =
-      this.apiKey &&
-      !this.apiKey.startsWith('sk-placeholder') &&
-      !this.apiKey.includes('your_') &&
-      !this.apiKey.includes('your-');
-
-    if (hasValidApiKey && !options.forceHeuristic) {
+    if (this.model && env.OPENAI_API_KEY) {
       try {
-        const llmResult = await this.extractWithLLM(narrativeText, targets, options);
-        extractedData = llmResult.extractedData || {};
-        confidenceScores = llmResult.confidenceScores || {};
-        source = `${this.provider}_llm_engine`;
+        const result = await this.extractWithLLMWithRetry(narrativeText, extractionTargets);
+        extractedData = result.extractedData;
+        confidenceScores = result.confidenceScores;
       } catch (err) {
-        console.warn(
-          `[ExtractionService] LLM call failed (${err.message}). Using deterministic heuristic fallback.`
-        );
-        const fallback = this.localHeuristicParser(narrativeText, targets);
-        extractedData = fallback.extractedData;
-        confidenceScores = fallback.confidenceScores;
-        source = 'heuristic_fallback_engine';
+        console.warn(`[ExtractionService] LLM API extraction failed. Falling back to local heuristic parser: ${err.message}`);
+        const fallbackResult = this.localHeuristicParser(narrativeText, extractionTargets);
+        extractedData = fallbackResult.extractedData;
+        confidenceScores = fallbackResult.confidenceScores;
       }
     } else {
-      const fallback = this.localHeuristicParser(narrativeText, targets);
-      extractedData = fallback.extractedData;
-      confidenceScores = fallback.confidenceScores;
-      source = 'heuristic_fallback_engine';
+      const fallbackResult = this.localHeuristicParser(narrativeText, extractionTargets);
+      extractedData = fallbackResult.extractedData;
+      confidenceScores = fallbackResult.confidenceScores;
     }
 
-    const cleanedExtractedData = normalizeExtractedValues(extractedData, targets);
+    const cleanedExtractedData = this.normalizeExtractedData(extractedData, extractionTargets);
+    const missingFields = this.calculateMissingFields(schema, cleanedExtractedData);
 
-    const rawFields = Array.isArray(formOrTargets)
-      ? formOrTargets
-      : formOrTargets && Array.isArray(formOrTargets.fields)
-      ? formOrTargets.fields
-      : targets;
-    const missingFields = ruleEngineService.calculateMissingFields(rawFields, cleanedExtractedData);
-
-    const confidenceMetrics = calculateConfidenceMetrics(confidenceScores, 0.75);
+    const lowConfidenceFields = Object.keys(confidenceScores).filter(
+      (key) => (confidenceScores[key] || 0) < 0.75 && cleanedExtractedData[key] !== undefined
+    );
 
     return {
+      formType: schema.formType,
+      schemaVersion: schema.version,
       extractedData: cleanedExtractedData,
       confidenceScores,
-      lowConfidenceFields: confidenceMetrics.lowConfidenceFields,
+      lowConfidenceFields,
       missingFields,
-      averageConfidence: confidenceMetrics.averageConfidence,
-      needsReview: confidenceMetrics.needsReview,
-      source,
     };
   }
 
-  /**
-   * Evaluate dynamic missing fields for a given form schema and data state
-   */
-  calculateMissingFields(formOrFields, data) {
-    const rawFields = Array.isArray(formOrFields)
-      ? formOrFields
-      : formOrFields && Array.isArray(formOrFields.fields)
-      ? formOrFields.fields
-      : [];
-    return ruleEngineService.calculateMissingFields(rawFields, data);
-  }
-
-  /**
-   * Remote LLM caller — immediately throws a non-retryable error on 401/429
-   */
-  async extractWithLLM(narrativeText, targets, options = {}) {
-    const prompt = buildExtractionPrompt(targets, narrativeText, options);
-
-    if (this.provider === 'openai') {
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${this.apiKey}`,
-        },
-        body: JSON.stringify({
-          model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
-          temperature: 0,
-          response_format: { type: 'json_object' },
-          messages: [{ role: 'user', content: prompt }],
-        }),
-      });
-
-      if (!response.ok) {
-        const status = response.status;
-        // 401 = bad/missing API key, 429 = quota exhausted / rate limit
-        // Do NOT retry these — fall back immediately
-        if (NON_RETRYABLE_STATUSES.has(status)) {
-          const reason =
-            status === 401 ? 'Invalid or missing API key' :
-            status === 429 ? 'Quota exhausted or rate limited — add credits at platform.openai.com/settings/organization/billing' :
-            `HTTP ${status}`;
-          const err = new Error(`OpenAI ${status}: ${reason}`);
-          err.status = status;
-          err.nonRetryable = true;
+  async extractWithLLMWithRetry(narrativeText, targets, maxRetries = 1) {
+    let delay = 1000;
+    for (let attempt = 1; attempt <= maxRetries + 1; attempt++) {
+      try {
+        return await this.executeLLMPrompt(narrativeText, targets);
+      } catch (err) {
+        if (
+          err.status === 401 ||
+          err.status === 429 ||
+          err.message?.includes('401') ||
+          err.message?.includes('429') ||
+          err.message?.includes('Incorrect API key') ||
+          err.message?.includes('no credits') ||
+          err.message?.includes('Rate limit') ||
+          err.message?.includes('quota')
+        ) {
           throw err;
         }
-        throw new Error(`OpenAI API returned status ${status}`);
+        if (attempt > maxRetries) throw err;
+        console.warn(`[LLM Retry] Attempt ${attempt} failed. Retrying in ${delay}ms...`);
+        await new Promise((res) => setTimeout(res, delay));
+        delay *= 2;
       }
-
-      const json = await response.json();
-      const content = json.choices?.[0]?.message?.content || '{}';
-      const parsed = JSON.parse(content);
-      return {
-        extractedData: parsed.extractedData || {},
-        confidenceScores: parsed.confidenceScores || {},
-      };
     }
-
-    throw new Error(`Unsupported LLM provider: ${this.provider}`);
   }
 
-  /**
-   * Deterministic local heuristic parser for offline processing and graceful degradation.
-   */
+  async executeLLMPrompt(narrativeText, targets) {
+    const promptTemplate = PromptTemplate.fromTemplate(`
+You are a precise data extraction assistant for an enterprise form system.
+Given the user's natural language narrative text, extract the required values according to the target field schema.
+
+Target Fields Schema:
+{targetsJson}
+
+User Narrative Text:
+"""
+{narrativeText}
+"""
+
+Instructions:
+1. Extract values for each target field using exact keys.
+2. For select or radio fields with defined options, map the extracted text strictly to one of the provided option values.
+3. For date fields, format as YYYY-MM-DD.
+4. Provide a confidence score between 0.00 and 1.00 for each field.
+5. Return strictly a JSON object with two keys: "extractedData" and "confidenceScores". Do NOT include markdown code fences or backticks.
+
+Example Output format:
+{{
+  "extractedData": {{
+    "incident.type": "animal_collision",
+    "vehicle.make": "Honda"
+  }},
+  "confidenceScores": {{
+    "incident.type": 0.95,
+    "vehicle.make": 0.90
+  }}
+}}
+`);
+
+    const chain = promptTemplate.pipe(this.model).pipe(new StringOutputParser());
+    const rawResponse = await chain.invoke({
+      targetsJson: JSON.stringify(targets, null, 2),
+      narrativeText,
+    });
+
+    const cleanedText = rawResponse.replace(/```json/g, '').replace(/```/g, '').trim();
+    const parsed = JSON.parse(cleanedText);
+
+    return {
+      extractedData: parsed.extractedData || {},
+      confidenceScores: parsed.confidenceScores || {},
+    };
+  }
+
   localHeuristicParser(narrativeText, targets) {
-    const text = narrativeText || '';
-    const textLower = text.toLowerCase();
+    const textLower = narrativeText.toLowerCase();
     const extractedData = {};
     const confidenceScores = {};
 
     for (const target of targets) {
-      const key = target.name;
-      const keyLower = key.toLowerCase();
-      const labelLower = (target.label || key).toLowerCase();
+      const fieldId = target.id;
+      const desc = (target.description || target.label).toLowerCase();
 
-      // 1. Select and Radio fields with explicit options
-      if (
-        (target.type === 'select' || target.type === 'radio') &&
-        Array.isArray(target.options) &&
-        target.options.length > 0
-      ) {
-        let matchedOption = null;
-
-        if (keyLower.includes('history') || keyLower.includes('prior') || labelLower.includes('history')) {
-          if (/\b(?:no prior|no history|denies|negative for|never had)\b/i.test(text) || /\bno\b/i.test(text)) {
-            matchedOption = target.options.find((o) => String(o).toLowerCase() === 'no') || 'no';
-          } else if (/\b(?:prior|history of|diagnosed with|yes)\b/i.test(text)) {
-            matchedOption = target.options.find((o) => String(o).toLowerCase() === 'yes') || 'yes';
-          }
-        } else if (keyLower.includes('recommend') || labelLower.includes('recommend')) {
-          if (/\b(?:would not recommend|do not recommend|never recommend|not recommend)\b/i.test(text)) {
-            matchedOption = target.options.find((o) => String(o).toLowerCase() === 'no') || 'no';
-          } else if (/\b(?:definitely recommend|would recommend|highly recommend|recommend)\b/i.test(text)) {
-            matchedOption = target.options.find((o) => String(o).toLowerCase() === 'yes') || 'yes';
+      if (target.options && Array.isArray(target.options)) {
+        for (const opt of target.options) {
+          const optStr = String(opt).toLowerCase();
+          if (
+            textLower.includes(optStr) ||
+            (optStr.includes('deer') && textLower.includes('deer')) ||
+            (optStr.includes('animal') && textLower.includes('deer'))
+          ) {
+            extractedData[fieldId] = opt;
+            confidenceScores[fieldId] = 0.92;
+            break;
           }
         }
+      }
 
-        if (!matchedOption) {
-          for (const opt of target.options) {
-            const optStr = String(opt).toLowerCase().replace(/_/g, ' ');
-            const escaped = optStr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            const rawOpt = String(opt).toLowerCase();
-            const wordRegex = new RegExp(`\\b(?:${escaped}|${rawOpt})\\b`, 'i');
-            if (wordRegex.test(text)) {
-              matchedOption = opt;
+      if (!extractedData[fieldId]) {
+        if (target.type === 'date') {
+          if (textLower.includes('yesterday')) {
+            const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+            extractedData[fieldId] = yesterday;
+            confidenceScores[fieldId] = 0.88;
+          } else if (textLower.includes('today')) {
+            const today = new Date().toISOString().split('T')[0];
+            extractedData[fieldId] = today;
+            confidenceScores[fieldId] = 0.90;
+          } else {
+            const dateMatch = narrativeText.match(/\b(\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}\/\d{4})\b/);
+            if (dateMatch) {
+              extractedData[fieldId] = dateMatch[1];
+              confidenceScores[fieldId] = 0.85;
+            }
+          }
+        } else if (fieldId.includes('make') || fieldId.includes('vehicle')) {
+          const carMakes = ['Honda', 'Toyota', 'Ford', 'Chevrolet', 'BMW', 'Mercedes', 'Tesla', 'Nissan', 'Hyundai'];
+          for (const make of carMakes) {
+            if (textLower.includes(make.toLowerCase())) {
+              extractedData[fieldId] = make;
+              confidenceScores[fieldId] = 0.95;
               break;
             }
           }
-        }
-
-        if (!matchedOption) {
-          if (keyLower.includes('incident') || keyLower.includes('type')) {
-            if (textLower.includes('deer') || textLower.includes('animal') || textLower.includes('dog') || textLower.includes('cow')) {
-              matchedOption = target.options.find((o) => String(o).toLowerCase().includes('animal')) || 'animal_collision';
-            } else if (textLower.includes('rear-ended') || textLower.includes('rear ended') || textLower.includes('behind')) {
-              matchedOption = target.options.find((o) => String(o).toLowerCase().includes('rear')) || 'rear_end';
-            } else if (textLower.includes('hail') || textLower.includes('storm') || textLower.includes('flood')) {
-              matchedOption = target.options.find((o) => String(o).toLowerCase().includes('weather')) || 'weather_damage';
-            } else if (textLower.includes('theft') || textLower.includes('stolen')) {
-              matchedOption = target.options.find((o) => String(o).toLowerCase().includes('theft')) || 'theft';
-            }
-          } else if (keyLower.includes('severity')) {
-            if (textLower.includes('shattered') || textLower.includes('severe') || textLower.includes('totaled')) {
-              matchedOption = target.options.find((o) => String(o).toLowerCase().includes('severe')) || 'severe';
-            } else if (textLower.includes('moderate') || textLower.includes('medium')) {
-              matchedOption = target.options.find((o) => String(o).toLowerCase().includes('moderate')) || 'moderate';
-            } else if (textLower.includes('minor') || textLower.includes('scratch') || textLower.includes('slight')) {
-              matchedOption = target.options.find((o) => String(o).toLowerCase().includes('minor')) || 'minor';
-            }
-          } else if (keyLower.includes('symptom')) {
-            if (textLower.includes('chest pain') || textLower.includes('chest')) {
-              matchedOption = target.options.find((o) => String(o).toLowerCase().includes('chest')) || 'chest_pain';
-            } else if (textLower.includes('headache') || textLower.includes('migraine')) {
-              matchedOption = target.options.find((o) => String(o).toLowerCase().includes('headache')) || 'headache';
-            } else if (textLower.includes('breath') || textLower.includes('breathing')) {
-              matchedOption = target.options.find((o) => String(o).toLowerCase().includes('breath')) || 'shortness_of_breath';
+        } else if (fieldId.includes('damage') || fieldId.includes('location') || fieldId.includes('part')) {
+          const bodyParts = ['windshield', 'bumper', 'fender', 'door', 'hood', 'headlight', 'mirror', 'roof'];
+          for (const part of bodyParts) {
+            if (textLower.includes(part)) {
+              extractedData[fieldId] = part;
+              confidenceScores[fieldId] = 0.90;
+              break;
             }
           }
-        }
-
-        if (matchedOption) {
-          extractedData[key] = matchedOption;
-          confidenceScores[key] = 0.95;
-          continue;
-        }
-      }
-
-      // 2. Date fields
-      if (target.type === 'date' || keyLower.includes('date')) {
-        if (textLower.includes('yesterday')) {
-          extractedData[key] = new Date(Date.now() - 86400000).toISOString().split('T')[0];
-          confidenceScores[key] = 0.90;
-          continue;
-        } else if (textLower.includes('today')) {
-          extractedData[key] = new Date().toISOString().split('T')[0];
-          confidenceScores[key] = 0.92;
-          continue;
-        } else {
-          const dateMatch = text.match(/\b(\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}\/\d{4})\b/);
-          if (dateMatch) {
-            extractedData[key] = dateMatch[1];
-            confidenceScores[key] = 0.88;
-            continue;
+        } else if (fieldId.includes('location') || fieldId.includes('street') || fieldId.includes('highway')) {
+          const locMatch = narrativeText.match(/\b(on\s+[A-Za-z0-9\-\s]+?(?=\s+yesterday|\s+today|\s+in|\s+and|\.|$))/i);
+          if (locMatch) {
+            extractedData[fieldId] = locMatch[1].replace(/^on\s+/i, '').trim();
+            confidenceScores[fieldId] = 0.80;
           }
-        }
-      }
-
-      // 3. Vehicle Make
-      if (keyLower.includes('make') || keyLower.includes('vehicle') || labelLower.includes('make')) {
-        const carMakes = ['Honda', 'Toyota', 'Ford', 'Chevrolet', 'BMW', 'Mercedes', 'Tesla', 'Nissan', 'Hyundai', 'Audi', 'Volkswagen', 'Subaru'];
-        for (const make of carMakes) {
-          if (textLower.includes(make.toLowerCase())) {
-            extractedData[key] = make;
-            confidenceScores[key] = 0.96;
-            break;
+        } else if (fieldId.includes('severity') || fieldId.includes('injury')) {
+          if (textLower.includes('shattered') || textLower.includes('severe') || textLower.includes('totaled')) {
+            extractedData[fieldId] = 'severe';
+            confidenceScores[fieldId] = 0.85;
+          } else if (textLower.includes('minor') || textLower.includes('scratch')) {
+            extractedData[fieldId] = 'minor';
+            confidenceScores[fieldId] = 0.85;
           }
-        }
-        if (extractedData[key]) continue;
-      }
-
-      // 4. Damage Location / Car Parts
-      if (keyLower.includes('damage') || keyLower.includes('location') || keyLower.includes('part')) {
-        const parts = ['windshield', 'bumper', 'fender', 'door', 'hood', 'headlight', 'mirror', 'roof', 'wheel', 'trunk'];
-        for (const part of parts) {
-          if (textLower.includes(part)) {
-            extractedData[key] = part;
-            confidenceScores[key] = 0.92;
-            break;
-          }
-        }
-        if (extractedData[key]) continue;
-      }
-
-      // 5. Street / Highway Location
-      if (keyLower.includes('location') || keyLower.includes('street') || keyLower.includes('highway') || labelLower.includes('location')) {
-        const locMatch = text.match(/\b(?:on|at|near)\s+([A-Za-z0-9\-\s]+?)(?=\s+(?:yesterday|today|in|and|while|\.|$))/i);
-        if (locMatch) {
-          extractedData[key] = locMatch[1].trim();
-          confidenceScores[key] = 0.85;
-          continue;
-        }
-      }
-
-      // 6. Number / Currency / Rating fields
-      if (target.type === 'number' || keyLower.includes('cost') || keyLower.includes('amount') || keyLower.includes('age') || keyLower.includes('rating')) {
-        if (keyLower.includes('rating') || labelLower.includes('rating')) {
-          const ratingMatch =
-            text.match(/\b([1-5])\s*(?:stars?|\/5)\b/i) ||
-            text.match(/\brated?\s*([1-5])\b/i) ||
-            text.match(/\brating\s+(?:of\s+)?([1-5])\b/i);
-          if (ratingMatch) {
-            extractedData[key] = Number(ratingMatch[1]);
-            confidenceScores[key] = 0.95;
-            continue;
-          }
-        }
-        const numMatch = text.match(/\$?\s*(\d+(?:,\d{3})*(?:\.\d+)?)\s*(?:dollars|usd)?/i);
-        if (numMatch) {
-          extractedData[key] = Number(numMatch[1].replace(/,/g, ''));
-          confidenceScores[key] = 0.82;
-          continue;
-        }
-      }
-
-      // 7. Names / People
-      if (keyLower.includes('name') || labelLower.includes('name')) {
-        const nameMatch =
-          text.match(/\b(?:my name is|i am|patient|customer)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b/i) ||
-          text.match(/^([A-Z][a-z]+)\s+(?:gave|rated|submitted|is|was|stated)\b/i);
-        if (nameMatch) {
-          extractedData[key] = nameMatch[1].trim();
-          confidenceScores[key] = 0.88;
-          continue;
         }
       }
     }
 
     return { extractedData, confidenceScores };
   }
+
+  normalizeExtractedData(extractedData, targets) {
+    const cleaned = {};
+    for (const target of targets) {
+      const val = extractedData[target.id];
+      if (val !== undefined && val !== null && val !== '') {
+        if (target.type === 'number') {
+          const num = Number(val);
+          cleaned[target.id] = isNaN(num) ? val : num;
+        } else if (target.type === 'checkbox' && typeof val !== 'boolean') {
+          cleaned[target.id] = Array.isArray(val) ? val : [val];
+        } else {
+          cleaned[target.id] = val;
+        }
+      }
+    }
+    return cleaned;
+  }
+
+  calculateMissingFields(schema, formData) {
+    const missing = [];
+
+    for (const section of schema.sections || []) {
+      if (section.showIf && !ruleEngineService.evaluateRule(section.showIf, formData)) {
+        continue;
+      }
+
+      for (const field of section.fields || []) {
+        if (field.showIf && !ruleEngineService.evaluateRule(field.showIf, formData)) {
+          continue;
+        }
+
+        if (field.validation && field.validation.required) {
+          const value = ruleEngineService.getNestedValue(formData, field.id);
+          if (value === undefined || value === null || value === '' || (Array.isArray(value) && value.length === 0)) {
+            missing.push(field.id);
+          }
+        }
+      }
+    }
+
+    return missing;
+  }
 }
 
-const extractionService = new ExtractionService();
-
-module.exports = {
-  ExtractionService,
-  extractionService,
-};
+export const extractionService = new ExtractionService();
+export default extractionService;
