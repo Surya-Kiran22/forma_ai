@@ -11,7 +11,7 @@ import draftRoutes from './routes/draftRoutes.js';
 import submissionRoutes from './routes/submissionRoutes.js';
 
 const app = express();
-
+app.set('trust proxy', 1);
 // Security CORS config - flexible origin matching with support for Render subdomains & wildcards
 const allowedOrigins = (env.CORS_ORIGIN || '*')
   .split(',')
